@@ -1,0 +1,192 @@
+---
+title: "Getting Started with bccp"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting Started with bccp}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5
+)
+```
+
+## Introduction
+
+The `bccp` package implements **Bin-Conditional Conformal Prediction** (BCCP) for generating valid prediction intervals with coverage guarantees within user-specified outcome bins. This is particularly useful for count data and time series forecasting where traditional conformal prediction methods may not provide adequate coverage across different outcome ranges.
+
+The method is based on [Blair, Coppock & Moor (2024)](https://arxiv.org/abs/2410.14507).
+
+## Installation
+
+```{r eval=FALSE}
+# Install from GitHub
+devtools::install_github("lassa-sentinel/bccp")
+```
+
+```{r setup}
+library(bccp)
+library(ggplot2)
+```
+
+## Basic Usage
+
+### Generate Example Data
+
+First, let's generate some synthetic count data to demonstrate the method:
+
+```{r generate-data}
+# Generate synthetic Poisson data
+set.seed(42)
+n <- 500
+x <- runif(n, 0, 10)
+y <- rpois(n, lambda = exp(0.5 + 0.2 * x))
+pred <- exp(0.5 + 0.2 * x)  # True mean as prediction
+
+df <- data.frame(x = x, y = y, pred = pred)
+head(df)
+```
+
+### Split Data
+
+BCCP requires separate calibration and test sets. The calibration set is used to compute the prediction intervals, which are then applied to the test set.
+
+```{r split-data}
+# Use the built-in split function
+splits <- split_data(df, calib_prop = 0.8, seed = 42)
+
+calib_set <- splits$calib_set
+test_set <- splits$test_set
+
+cat("Calibration set size:", nrow(calib_set), "\n")
+cat("Test set size:", nrow(test_set), "\n")
+```
+
+### Apply BCCP
+
+Now apply bin-conditional conformal prediction with a target coverage of 90% (alpha = 0.1):
+
+```{r apply-bccp}
+result <- bccp(
+  calib_set = calib_set,
+  test_set = test_set,
+  y_col = "y",
+  pred_col = "pred",
+  n_bins = 4,
+  zero_bin = TRUE,
+  alpha = 0.1
+)
+
+head(result)
+```
+
+### Evaluate Coverage
+
+Check the actual coverage achieved:
+```{r coverage}
+metrics <- coverage_metrics(result)
+cat("Coverage:", round(metrics$coverage, 3), "(target: 0.90)\n")
+cat("Mean interval width:", round(metrics$mean_width, 2), "\n")
+cat("Median interval width:", round(metrics$median_width, 2), "\n")
+```
+
+### Visualize Results
+
+```{r plot-intervals, fig.height=6}
+# Add x values back for plotting
+result$x <- test_set$x
+
+ggplot(result, aes(x = x)) +
+
+geom_ribbon(aes(ymin = lower, ymax = upper), fill = "steelblue", alpha = 0.3) +
+  geom_point(aes(y = y), color = "black", size = 1.5) +
+  geom_line(aes(y = pred), color = "red", linewidth = 1) +
+  labs(
+    title = "BCCP Prediction Intervals (90% Target Coverage)",
+    subtitle = paste("Actual coverage:", round(metrics$coverage * 100, 1), "%"),
+    x = "x",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+## Seasonal BCCP
+
+For time series data with seasonality, use `bccp_seasonal()` which conditions on both outcome bins AND time periods:
+
+```{r seasonal-data}
+# Generate seasonal data
+seasonal_df <- generate_synthetic_data(
+  n = 200,
+  start_date = "2020-01-01",
+  seasonal_amplitude = 3,
+  base_rate = 5
+)
+
+head(seasonal_df)
+```
+
+```{r plot-seasonal}
+ggplot(seasonal_df, aes(x = date)) +
+  geom_point(aes(y = y), alpha = 0.6) +
+  geom_line(aes(y = true_mean), color = "red") +
+  labs(title = "Seasonal Count Data", x = "Date", y = "Count") +
+  theme_minimal()
+```
+
+```{r apply-seasonal-bccp}
+# Split temporally
+seasonal_splits <- split_data(seasonal_df, calib_prop = 0.8, date_col = "date")
+
+# Apply seasonal BCCP
+seasonal_result <- bccp_seasonal(
+  calib_set = seasonal_splits$calib_set,
+  test_set = seasonal_splits$test_set,
+  date_col = "date",
+  alpha = 0.1,
+  min_stratum_size = 5
+)
+
+# Check coverage
+seasonal_metrics <- coverage_metrics(seasonal_result)
+cat("Seasonal BCCP coverage:", round(seasonal_metrics$coverage, 3), "\n")
+cat("Mean interval width:", round(seasonal_metrics$mean_width, 2), "\n")
+```
+
+```{r plot-seasonal-result}
+seasonal_result$date <- seasonal_splits$test_set$date
+
+ggplot(seasonal_result, aes(x = date)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = "steelblue", alpha = 0.3) +
+  geom_point(aes(y = y), size = 1.5) +
+  geom_line(aes(y = pred), color = "red") +
+  labs(
+    title = "Seasonal BCCP Prediction Intervals",
+    subtitle = paste("Coverage:", round(seasonal_metrics$coverage * 100, 1), "%"),
+    x = "Date",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+## Key Parameters
+
+### `n_bins`
+Number of bins for partitioning the outcome space. More bins provide finer-grained coverage guarantees but require more calibration data.
+
+### `zero_bin`
+When `TRUE` (default), creates a separate bin for zero values. This is useful for count data with excess zeros, ensuring proper coverage for the zero-inflation component.
+### `alpha`
+Target miscoverage rate. For example, `alpha = 0.1` targets 90% coverage.
+
+### `min_stratum_size` (seasonal only)
+Minimum number of calibration points required per time stratum. Strata with fewer points fall back to pooled thresholds.
+
+## References
+
+Blair, G., Coppock, A., & Moor, M. (2024). Bin-Conditional Conformal Prediction. arXiv:2410.14507. https://arxiv.org/abs/2410.14507

@@ -1,0 +1,26 @@
+Package: bccp
+Title: Bin-Conditional Conformal Prediction
+Version: 0.1.0
+Authors@R: person("Sentinel Team", role = c("aut", "cre"), email = "sentinel@example.com")
+Description: Implements bin-conditional conformal prediction (BCCP) for
+    generating valid prediction intervals with coverage guarantees within
+    user-specified outcome bins. Includes extensions for handling seasonality
+    and non-stationarity in time series data. Based on Blair, Coppock & Moor
+    (2024) <arXiv:2410.14507>.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Imports:
+    dplyr,
+    stats
+Suggests:
+    ggplot2,
+    tidyr,
+    knitr,
+    rmarkdown,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+VignetteBuilder: knitr
+URL: https://lassa-sentinel.github.io/bccp/, https://github.com/lassa-sentinel/bccp
+BugReports: https://github.com/lassa-sentinel/bccp/issues
